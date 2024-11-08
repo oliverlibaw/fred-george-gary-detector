@@ -8,6 +8,10 @@ __pycache__/
 # C extensions
 *.so
 
+#additional stuff
+models/*.pt
+.ipynb_checkpoints
+
 # Distribution / packaging
 .Python
 build/
@@ -89,6 +93,7 @@ ipython_config.py
 #   intended to run in multiple environments; otherwise, check them in:
 # .python-version
 
+
 # pipenv
 #   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
 #   However, in case of collaboration, if having platform-specific dependencies or dependencies
@@ -131,6 +136,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
 
 # Spyder project settings
 .spyderproject

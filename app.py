@@ -1,43 +1,48 @@
 import streamlit as st
-import torch
-from ultralytics import YOLO
-from PIL import Image
-import cv2
-import numpy as np
 import os
-from huggingface_hub import hf_hub_download
-
+from PIL import Image
+import numpy as np
 
 # Set page config
 st.set_page_config(page_title="Object Detection App", layout="wide")
 
-
-# Get model from HF
-
-@st.cache_resource
-def load_model():
-    # Download model from HF Hub
-    model_path = hf_hub_download(
-        repo_id="oliverlibaw/fred-george-gary-11-2024.pt",
-        filename="yolov8s_cats_112024.pt"
-    )
-    return YOLO(model_path)
+def load_dependencies():
+    """Load heavy dependencies with error handling"""
+    try:
+        from ultralytics import YOLO
+        import torch
+        return True
+    except ImportError as e:
+        st.error(f"Error loading dependencies: {str(e)}")
+        st.info("If you're seeing this in development, try deploying to Streamlit Cloud where all dependencies will be properly installed.")
+        return False
 
 def main():
     st.title("Object Detection with YOLOv8")
     st.write("Upload an image to detect objects")
     
+    # Only try to load model if dependencies are available
+    if not load_dependencies():
+        st.stop()
+    
+    # Now it's safe to import YOLO
+    from ultralytics import YOLO
+    
     # Load model with error handling
     @st.cache_resource
     def load_model():
         try:
-            model = YOLO(MODEL_PATH)
-            return model
+            model_path = os.path.join('models', 'best.pt')
+            return YOLO(model_path)
         except Exception as e:
             st.error(f"Error loading model: {str(e)}")
             return None
     
-    model = load_model()
+    try:
+        model = load_model()
+    except Exception as e:
+        st.error(f"Error initializing model: {str(e)}")
+        st.stop()
     
     if model is None:
         st.stop()
