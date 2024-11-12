@@ -6,9 +6,11 @@ import cv2
 import numpy as np
 import os
 from huggingface_hub import hf_hub_download
+import time
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 
 # Set page config
-st.set_page_config(page_title="Object Detection App", layout="wide")
+st.set_page_config(page_title="Real-time Object Detection", layout="wide")
 
 # Get model from HF - this should be outside the main() function
 @st.cache_resource
@@ -24,9 +26,39 @@ def load_model():
         st.error(f"Error loading model: {str(e)}")
         return None
 
+class VideoProcessor:
+    def __init__(self, model):
+        self.model = model
+        
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        
+        # Perform inference
+        results = self.model(img, stream=True)
+        
+        # Process results and draw on frame
+        for result in results:
+            boxes = result.boxes.cpu().numpy()
+            
+            # Draw bounding boxes and labels
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                conf = float(box.conf[0])
+                cls = int(box.cls[0])
+                cls_name = self.model.names[cls]
+                
+                # Draw rectangle
+                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                # Add label with confidence
+                label = f"{cls_name}: {conf:.2f}"
+                cv2.putText(img, label, (x1, y1-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        return frame.from_ndarray(img)
+
 def main():
-    st.title("Object Detection with YOLOv8")
-    st.write("Upload an image to detect objects")
+    st.title("Real-time Object Detection with YOLOv8")
     
     # Load model
     model = load_model()
@@ -35,42 +67,35 @@ def main():
         st.error("Failed to load model. Please check your Hugging Face repository settings.")
         st.stop()
     
-    # File uploader
-    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+    # RTC Configuration for WebRTC
+    rtc_configuration = RTCConfiguration(
+        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+    )
     
-    if uploaded_file is not None:
-        # Convert uploaded file to image
-        image = Image.open(uploaded_file)
-        
-        # Create two columns
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("Original Image")
-            st.image(image, use_column_width=True)
-        
-        if st.button('Detect Objects'):
-            with st.spinner('Detecting objects...'):
-                # Perform inference
-                results = model(image)
-                
-                # Plot results
-                for result in results:
-                    boxes = result.boxes.cpu().numpy()
-                    img = result.plot()
-                    
-                    with col2:
-                        st.write("Detection Results")
-                        st.image(img, use_column_width=True)
-                        
-                        # Display detection information
-                        st.write("Detections:")
-                        for box in boxes:
-                            conf = box.conf[0]
-                            cls = int(box.cls[0])
-                            cls_name = model.names[cls]
-                            st.write(f"- {cls_name}: {conf:.2f}")
-             
+    # Create WebRTC streamer
+    ctx = webrtc_streamer(
+        key="object-detection",
+        mode=WebRtcMode.SENDRECV,
+        rtc_configuration=rtc_configuration,
+        video_processor_factory=lambda: VideoProcessor(model),
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True,
+    )
+    
+    # Add some instructions
+    st.markdown("""
+    ### Instructions:
+    1. Click the 'Start' button above to begin the video stream
+    2. Allow access to your camera when prompted
+    3. The model will perform real-time detection on the video feed
+    4. Objects will be highlighted with bounding boxes and labeled with confidence scores
+    5. Click 'Stop' to end the stream
+    """)
+    
+    # Add information about the model
+    st.sidebar.header("Model Information")
+    st.sidebar.write(f"Model: YOLOv8s")
+    st.sidebar.write(f"Classes: {', '.join(model.names.values())}")
 
 if __name__ == '__main__':
     main()
