@@ -6,7 +6,6 @@ import cv2
 import numpy as np
 import os
 from huggingface_hub import hf_hub_download
-import time
 
 # Set page config
 st.set_page_config(page_title="Real-time Object Detection", layout="wide")
@@ -25,6 +24,44 @@ def load_model():
         st.error(f"Error loading model: {str(e)}")
         return None
 
+def process_image(image, model):
+    """Process a single image and return the annotated image and detections"""
+    # Convert PIL Image to numpy array if necessary
+    if isinstance(image, Image.Image):
+        image_np = np.array(image)
+    else:
+        image_np = image
+
+    # Perform detection
+    results = model(image_np, stream=True)
+    detections = []
+    
+    for result in results:
+        boxes = result.boxes.cpu().numpy()
+        
+        # Draw bounding boxes and labels
+        for box in boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            conf = float(box.conf[0])
+            cls = int(box.cls[0])
+            cls_name = model.names[cls]
+            
+            # Draw rectangle
+            cv2.rectangle(image_np, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            
+            # Add label with confidence
+            label = f"{cls_name}: {conf:.2f}"
+            cv2.putText(image_np, label, (x1, y1-10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+            detections.append({
+                'class': cls_name,
+                'confidence': conf,
+                'bbox': [x1, y1, x2, y2]
+            })
+    
+    return image_np, detections
+
 def main():
     st.title("Real-time Object Detection with YOLOv8")
     
@@ -35,66 +72,44 @@ def main():
         st.error("Failed to load model. Please check your Hugging Face repository settings.")
         st.stop()
 
-    # Create a placeholder for the video frame
-    frame_placeholder = st.empty()
+    # Create two columns
+    col1, col2 = st.columns(2)
     
-    # Add a stop button
-    stop_button = st.button("Stop")
-    
-    # Initialize camera
-    cap = cv2.VideoCapture(0)
-    
-    if not cap.isOpened():
-        st.error("Unable to access camera. Please check your camera settings.")
-        st.stop()
+    with col1:
+        st.write("Camera Input")
+        # Use Streamlit's camera input
+        camera_image = st.camera_input("Take a picture")
         
-    try:
-        while not stop_button:
-            # Read frame from camera
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Failed to read from camera")
-                break
-                
-            # Convert frame from BGR to RGB
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    with col2:
+        st.write("Detection Results")
+        if camera_image is not None:
+            # Convert the image to PIL Image
+            image = Image.open(camera_image)
             
-            # Perform detection
-            results = model(frame_rgb, stream=True)
+            # Process image and show results
+            annotated_img, detections = process_image(image, model)
             
-            # Process results and draw on frame
-            for result in results:
-                boxes = result.boxes.cpu().numpy()
-                
-                # Draw bounding boxes and labels
-                for box in boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    conf = float(box.conf[0])
-                    cls = int(box.cls[0])
-                    cls_name = model.names[cls]
-                    
-                    # Draw rectangle
-                    cv2.rectangle(frame_rgb, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    
-                    # Add label with confidence
-                    label = f"{cls_name}: {conf:.2f}"
-                    cv2.putText(frame_rgb, label, (x1, y1-10), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            # Display the annotated image
+            st.image(annotated_img, channels="RGB", use_column_width=True)
             
-            # Display the frame
-            frame_placeholder.image(frame_rgb, channels="RGB", use_column_width=True)
-            
-            # Add a small delay to reduce CPU usage
-            time.sleep(0.1)
-            
-    finally:
-        # Release the camera when done
-        cap.release()
+            # Display detection information
+            st.write("Detections:")
+            for det in detections:
+                st.write(f"- {det['class']}: {det['confidence']:.2f}")
     
-    # Add information about the model
+    # Add information about the model in the sidebar
     st.sidebar.header("Model Information")
     st.sidebar.write(f"Model: YOLOv8s")
     st.sidebar.write(f"Classes: {', '.join(model.names.values())}")
+    
+    # Add instructions in the sidebar
+    st.sidebar.header("Instructions")
+    st.sidebar.write("""
+    1. Allow camera access when prompted
+    2. Click 'Take a picture' to capture an image
+    3. The model will automatically detect objects
+    4. View detection results and confidence scores
+    """)
 
 if __name__ == '__main__':
     main()
