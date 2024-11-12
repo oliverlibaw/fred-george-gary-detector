@@ -16,7 +16,7 @@ def load_model():
     try:
         # Download model from HF Hub
         model_path = hf_hub_download(
-            repo_id="oliverlibaw/",  # repo name should not include .pt
+            repo_id="oliverlibaw/fred-george-gary-11-2024",  # repo name should not include .pt
             filename="yolov8scats112024",
         )
         return YOLO(model_path)
