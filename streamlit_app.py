@@ -16,7 +16,7 @@ def load_model():
     try:
         # Download model from HF Hub
         model_path = hf_hub_download(
-            repo_id="oliverlibaw/catdetection",  # from your HF URL
+            repo_id="oliverlibaw/red-george-gary-11-2024.pt",  # from your HF URL
             filename="yolov8scats2.pt",       # your exact filename
         )
         return YOLO(model_path)
