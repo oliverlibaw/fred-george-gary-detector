@@ -24,7 +24,7 @@ def load_model():
         st.error(f"Error loading model: {str(e)}")
         return None
 
-def process_image(image, model):
+def process_image(image, model, conf_threshold=0.25):
     """Process a single image and return the annotated image and detections"""
     # Convert PIL Image to numpy array if necessary
     if isinstance(image, Image.Image):
@@ -32,8 +32,8 @@ def process_image(image, model):
     else:
         image_np = image
 
-    # Perform detection
-    results = model(image_np, stream=True)
+    # Perform detection with confidence threshold
+    results = model(image_np, conf=conf_threshold, stream=True)
     detections = []
     
     for result in results:
@@ -72,6 +72,17 @@ def main():
         st.error("Failed to load model. Please check your Hugging Face repository settings.")
         st.stop()
 
+    # Add confidence threshold slider in sidebar
+    st.sidebar.header("Detection Settings")
+    conf_threshold = st.sidebar.slider(
+        "Confidence Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.25,  # default value
+        step=0.05,
+        help="Adjust the confidence threshold for object detection. Higher values mean stricter detection criteria."
+    )
+
     # Create two columns
     col1, col2 = st.columns(2)
     
@@ -86,8 +97,8 @@ def main():
             # Convert the image to PIL Image
             image = Image.open(camera_image)
             
-            # Process image and show results
-            annotated_img, detections = process_image(image, model)
+            # Process image and show results with confidence threshold
+            annotated_img, detections = process_image(image, model, conf_threshold)
             
             # Display the annotated image
             st.image(annotated_img, channels="RGB", use_column_width=True)
@@ -107,8 +118,9 @@ def main():
     st.sidebar.write("""
     1. Allow camera access when prompted
     2. Click 'Take a picture' to capture an image
-    3. The model will automatically detect objects
-    4. View detection results and confidence scores
+    3. Adjust the confidence threshold as needed
+    4. The model will automatically detect objects
+    5. View detection results and confidence scores
     """)
 
 if __name__ == '__main__':
