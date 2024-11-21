@@ -6,9 +6,27 @@ import cv2
 import numpy as np
 import os
 from huggingface_hub import hf_hub_download
+from pygame import mixer
+import time
+
+# Initialize pygame mixer
+mixer.init()
 
 # Set page config
 st.set_page_config(page_title="Real-time Object Detection", layout="wide")
+
+# Dictionary to store sound files for each class
+SOUND_FILES = {
+    'fred': 'fred.wav',
+    'george': 'george.wav',
+    'gary': 'gary.wav'
+}
+
+# Dictionary to track when each sound was last played
+last_played = {}
+
+# Minimum time between sound plays (in seconds)
+MIN_TIME_BETWEEN_SOUNDS = 2.0
 
 # Get model from HF - this should be outside the main() function
 @st.cache_resource
@@ -16,13 +34,30 @@ def load_model():
     try:
         # Download model from HF Hub
         model_path = hf_hub_download(
-            repo_id="oliverlibaw/fred-george-gary-11-2024.pt",  # from your HF URL
-            filename="best_11-19-PM.pt",       # your exact filename
+            repo_id="oliverlibaw/fred-george-gary-11-2024.pt",
+            filename="cats_yolov8n_11-20.pt",
         )
         return YOLO(model_path)
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
         return None
+
+def play_sound(class_name):
+    """Play sound for detected class if enough time has passed"""
+    current_time = time.time()
+    
+    # Check if this class has been played before and if enough time has passed
+    if (class_name not in last_played or 
+        current_time - last_played.get(class_name, 0) >= MIN_TIME_BETWEEN_SOUNDS):
+        
+        sound_file = SOUND_FILES.get(class_name.lower())
+        if sound_file:
+            try:
+                sound = mixer.Sound(sound_file)
+                sound.play()
+                last_played[class_name] = current_time
+            except Exception as e:
+                st.warning(f"Error playing sound for {class_name}: {str(e)}")
 
 def process_image(image, model, conf_threshold=0.25):
     """Process a single image and return the annotated image and detections"""
@@ -35,6 +70,8 @@ def process_image(image, model, conf_threshold=0.25):
     # Perform detection with confidence threshold
     results = model(image_np, conf=conf_threshold, stream=True)
     detections = []
+    
+    detected_classes = set()  # Track unique detected classes
     
     for result in results:
         boxes = result.boxes.cpu().numpy()
@@ -59,11 +96,18 @@ def process_image(image, model, conf_threshold=0.25):
                 'confidence': conf,
                 'bbox': [x1, y1, x2, y2]
             })
+            
+            # Add to detected classes
+            detected_classes.add(cls_name)
+    
+    # Play sounds for each unique detected class
+    for cls_name in detected_classes:
+        play_sound(cls_name)
     
     return image_np, detections
 
 def main():
-    st.title("Real-time Object Detection with YOLOv8")
+    st.title("Real-time Object Detection with Sound")
     
     # Load model
     model = load_model()
@@ -78,7 +122,7 @@ def main():
         "Confidence Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.25,  # default value
+        value=0.25,
         step=0.05,
         help="Adjust the confidence threshold for object detection. Higher values mean stricter detection criteria."
     )
@@ -108,10 +152,15 @@ def main():
             for det in detections:
                 st.write(f"- {det['class']}: {det['confidence']:.2f}")
     
-    # Add information about the model in the sidebar
+    # Add information about the model and sounds in the sidebar
     st.sidebar.header("Model Information")
     st.sidebar.write(f"Model: YOLOv8s")
     st.sidebar.write(f"Classes: {', '.join(model.names.values())}")
+    
+    st.sidebar.header("Sound Information")
+    st.sidebar.write("Each detection will play a unique sound:")
+    for class_name in SOUND_FILES.keys():
+        st.sidebar.write(f"- {class_name.capitalize()}: {SOUND_FILES[class_name]}")
     
     # Add instructions in the sidebar
     st.sidebar.header("Instructions")
@@ -119,8 +168,10 @@ def main():
     1. Allow camera access when prompted
     2. Click 'Take a picture' to capture an image
     3. Adjust the confidence threshold as needed
-    4. The model will automatically detect objects
+    4. The model will automatically detect objects and play sounds
     5. View detection results and confidence scores
+    
+    Note: Sounds will play only once every 2 seconds per class to avoid overlap.
     """)
 
 if __name__ == '__main__':
