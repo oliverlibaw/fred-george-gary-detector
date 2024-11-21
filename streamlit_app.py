@@ -6,11 +6,9 @@ import cv2
 import numpy as np
 import os
 from huggingface_hub import hf_hub_download
-from pygame import mixer
 import time
-
-# Initialize pygame mixer
-mixer.init()
+# Import pygame.mixer only when needed
+from pygame import mixer as pygame_mixer
 
 # Set page config
 st.set_page_config(page_title="Real-time Object Detection", layout="wide")
@@ -42,8 +40,22 @@ def load_model():
         st.error(f"Error loading model: {str(e)}")
         return None
 
+def initialize_audio():
+    """Initialize audio system with error handling"""
+    if 'audio_system' not in st.session_state:
+        try:
+            pygame_mixer.init()
+            st.session_state.audio_system = True
+        except Exception as e:
+            st.warning(f"Audio system initialization failed: {str(e)}")
+            st.session_state.audio_system = False
+    return st.session_state.audio_system
+
 def play_sound(class_name):
     """Play sound for detected class if enough time has passed"""
+    if not st.session_state.get('audio_system', False):
+        return
+        
     current_time = time.time()
     
     # Check if this class has been played before and if enough time has passed
@@ -51,9 +63,9 @@ def play_sound(class_name):
         current_time - last_played.get(class_name, 0) >= MIN_TIME_BETWEEN_SOUNDS):
         
         sound_file = SOUND_FILES.get(class_name.lower())
-        if sound_file:
+        if sound_file and os.path.exists(sound_file):
             try:
-                sound = mixer.Sound(sound_file)
+                sound = pygame_mixer.Sound(sound_file)
                 sound.play()
                 last_played[class_name] = current_time
             except Exception as e:
@@ -109,6 +121,9 @@ def process_image(image, model, conf_threshold=0.25):
 def main():
     st.title("Real-time Object Detection with Sound")
     
+    # Initialize audio system
+    audio_initialized = initialize_audio()
+    
     # Load model
     model = load_model()
     
@@ -157,10 +172,14 @@ def main():
     st.sidebar.write(f"Model: YOLOv8s")
     st.sidebar.write(f"Classes: {', '.join(model.names.values())}")
     
-    st.sidebar.header("Sound Information")
-    st.sidebar.write("Each detection will play a unique sound:")
-    for class_name in SOUND_FILES.keys():
-        st.sidebar.write(f"- {class_name.capitalize()}: {SOUND_FILES[class_name]}")
+    # Show sound information only if audio is initialized
+    if audio_initialized:
+        st.sidebar.header("Sound Information")
+        st.sidebar.write("Each detection will play a unique sound:")
+        for class_name in SOUND_FILES.keys():
+            st.sidebar.write(f"- {class_name.capitalize()}: {SOUND_FILES[class_name]}")
+    else:
+        st.sidebar.warning("Audio system not initialized. Sound effects are disabled.")
     
     # Add instructions in the sidebar
     st.sidebar.header("Instructions")
