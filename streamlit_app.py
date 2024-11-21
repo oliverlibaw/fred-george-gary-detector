@@ -7,8 +7,7 @@ import numpy as np
 import os
 from huggingface_hub import hf_hub_download
 import time
-# Import pygame.mixer only when needed
-from pygame import mixer as pygame_mixer
+import pygame
 
 # Set page config
 st.set_page_config(page_title="Real-time Object Detection", layout="wide")
@@ -41,18 +40,25 @@ def load_model():
         return None
 
 def initialize_audio():
-    """Initialize audio system with error handling"""
+    """Initialize audio system with error handling and fallback"""
     if 'audio_system' not in st.session_state:
         try:
-            pygame_mixer.init()
+            # Try to set the audio driver to 'dummy' before initialization
+            os.environ['SDL_AUDIODRIVER'] = 'dummy'
+            pygame.mixer.init()
             st.session_state.audio_system = True
+            st.info("Audio initialized in dummy mode - sounds will be simulated")
         except Exception as e:
             st.warning(f"Audio system initialization failed: {str(e)}")
             st.session_state.audio_system = False
     return st.session_state.audio_system
 
+def simulate_sound_played(class_name):
+    """Simulate sound playing by showing a notification"""
+    st.toast(f"🔊 Playing sound for {class_name}")
+
 def play_sound(class_name):
-    """Play sound for detected class if enough time has passed"""
+    """Play or simulate sound for detected class if enough time has passed"""
     if not st.session_state.get('audio_system', False):
         return
         
@@ -65,8 +71,8 @@ def play_sound(class_name):
         sound_file = SOUND_FILES.get(class_name.lower())
         if sound_file and os.path.exists(sound_file):
             try:
-                sound = pygame_mixer.Sound(sound_file)
-                sound.play()
+                # In dummy mode, we'll simulate the sound
+                simulate_sound_played(class_name)
                 last_played[class_name] = current_time
             except Exception as e:
                 st.warning(f"Error playing sound for {class_name}: {str(e)}")
@@ -172,14 +178,11 @@ def main():
     st.sidebar.write(f"Model: YOLOv8s")
     st.sidebar.write(f"Classes: {', '.join(model.names.values())}")
     
-    # Show sound information only if audio is initialized
-    if audio_initialized:
-        st.sidebar.header("Sound Information")
-        st.sidebar.write("Each detection will play a unique sound:")
-        for class_name in SOUND_FILES.keys():
-            st.sidebar.write(f"- {class_name.capitalize()}: {SOUND_FILES[class_name]}")
-    else:
-        st.sidebar.warning("Audio system not initialized. Sound effects are disabled.")
+    # Show sound information
+    st.sidebar.header("Sound Information")
+    st.sidebar.write("Detection notifications will appear for:")
+    for class_name in SOUND_FILES.keys():
+        st.sidebar.write(f"- {class_name.capitalize()}")
     
     # Add instructions in the sidebar
     st.sidebar.header("Instructions")
@@ -187,10 +190,9 @@ def main():
     1. Allow camera access when prompted
     2. Click 'Take a picture' to capture an image
     3. Adjust the confidence threshold as needed
-    4. The model will automatically detect objects and play sounds
+    4. The model will automatically detect objects
     5. View detection results and confidence scores
-    
-    Note: Sounds will play only once every 2 seconds per class to avoid overlap.
+    6. Watch for sound notifications in the top-right corner
     """)
 
 if __name__ == '__main__':
