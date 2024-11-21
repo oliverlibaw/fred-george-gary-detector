@@ -32,7 +32,7 @@ def load_model():
         # Download model from HF Hub
         model_path = hf_hub_download(
             repo_id="oliverlibaw/fred-george-gary-11-2024.pt",
-            filename="cats_yolov8n_11-20.pt",
+            filename="cats_yolov8n_11-21.pt",
         )
         return YOLO(model_path)
     except Exception as e:
