@@ -5,5 +5,4 @@ opencv-python-headless==4.8.1.78
 numpy>=1.24.0
 pillow>=9.0.0
 huggingface-hub>=0.19.0
-python3-pygame
-libasound2-dev
+pygame>=2.5.2
