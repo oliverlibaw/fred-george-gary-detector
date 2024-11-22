@@ -77,15 +77,18 @@ def load_model():
         st.error(f"- Model path: {model_path if 'model_path' in locals() else 'Not created'}")
         return None
 
-def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
-    """Enhanced image processing with better size handling"""
+def process_image(image, model, conf_threshold=0.25, target_size=(1280, 1280)):
+    """Enhanced image processing optimized for high-resolution inputs"""
     try:
-        # Debug image size
-        if st.sidebar.checkbox("Show Debug Info"):
-            st.sidebar.write(f"Original Image Size: {image.size}")
+        # Get debug state from session state
+        show_debug = st.session_state.get('show_debug', False)
         
         # Convert PIL Image to RGB numpy array
         if isinstance(image, Image.Image):
+            # Debug original size
+            if show_debug:
+                st.sidebar.write(f"Original Image Size: {image.size}")
+            
             # Ensure RGB mode
             if image.mode != 'RGB':
                 image = image.convert('RGB')
@@ -97,26 +100,17 @@ def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
             ratio = min(target_size[0] / original_size[0], target_size[1] / original_size[1])
             new_size = tuple(int(dim * ratio) for dim in original_size)
             
-            if new_size[0] < 320 or new_size[1] < 320:
-                # Instead of warning, upscale to minimum size
-                scale_ratio = 320 / min(new_size)
-                new_size = tuple(int(dim * scale_ratio) for dim in new_size)
-                
-            # Resize image
+            # High quality resize
             image = image.resize(new_size, Image.Resampling.LANCZOS)
+            
+            if show_debug:
+                st.sidebar.write(f"Processing Size: {new_size}")
             
             # Convert to numpy array
             image_np = np.array(image)
-            
-            if st.sidebar.checkbox("Show Debug Info"):
-                st.sidebar.write(f"Processed Size: {new_size}")
         else:
             raise ValueError("Input must be a PIL Image")
 
-        # Ensure correct format and range
-        if image_np.dtype != np.uint8:
-            image_np = (image_np * 255).astype(np.uint8)
-        
         # Run inference
         results = model(image_np, conf=conf_threshold, verbose=False)[0]
         detections = []
@@ -136,14 +130,22 @@ def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
             else:
                 color = (0, 0, 255)  # Red
                 
-            # Draw rectangle
-            cv2.rectangle(image_np, (x1, y1), (x2, y2), color, 2)
+            # Draw rectangle with thicker lines for high-res
+            thickness = max(2, int(min(image_np.shape[:2]) / 400))
+            cv2.rectangle(image_np, (x1, y1), (x2, y2), color, thickness)
+            
+            # Scaled font size for high-res
+            font_scale = max(0.5, min(image_np.shape[:2]) / 1000)
             
             # Add label
             label = f"{class_name}: {conf:.2f}"
-            (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-            cv2.rectangle(image_np, (x1, y1-label_h-5), (x1+label_w, y1), color, -1)
-            cv2.putText(image_np, label, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+            (label_w, label_h), baseline = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+            cv2.rectangle(image_np, (x1, y1-label_h-baseline-5), 
+                         (x1+label_w, y1), color, -1)
+            cv2.putText(image_np, label, (x1, y1-baseline-5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), 
+                       thickness)
             
             detections.append({
                 'class': class_name,
@@ -156,9 +158,12 @@ def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
     except Exception as e:
         st.error(f"Error in image processing: {str(e)}")
         return None, []
-
 def main():
     st.title("Cat Detection App")
+    
+    # Initialize session state for debug toggle
+    if 'show_debug' not in st.session_state:
+        st.session_state.show_debug = False
     
     # Initialize systems
     audio_initialized = initialize_audio()
@@ -180,21 +185,28 @@ def main():
             help="Adjust detection sensitivity"
         )
         
-        # Image quality settings with proper size mapping
+        # Image quality settings optimized for high-res
         st.header("Image Settings")
         image_quality = st.select_slider(
             "Image Quality",
-            options=["Low", "Medium", "High"],
+            options=["Standard", "High", "Ultra"],
             value="High",
             help="Higher quality may affect performance"
         )
         
-        # Updated quality to size mapping
+        # Quality settings optimized for high-res cameras
         quality_sizes = {
-            "Low": (640, 640),     # Base size
-            "Medium": (800, 800),   # Slightly larger
-            "High": (1024, 1024)    # Maximum size
+            "Standard": (1024, 1024),    # Base size
+            "High": (1280, 1280),        # Recommended
+            "Ultra": (1536, 1536)        # Maximum size
         }
+        
+        # Debug toggle with unique key
+        st.session_state.show_debug = st.checkbox(
+            "Show Debug Info",
+            value=st.session_state.show_debug,
+            key="debug_toggle"
+        )
 
     # Main content
     col1, col2 = st.columns(2)
@@ -210,7 +222,9 @@ def main():
         st.subheader("Detection Results")
         if camera_image is not None:
             try:
-                # Process image with selected quality
+                # Process image
+                start_time = time.time()
+                
                 image = Image.open(camera_image)
                 target_size = quality_sizes[image_quality]
                 
@@ -234,6 +248,11 @@ def main():
                             st.markdown(f"- {det['class']}: ::{color}[{conf:.2f}]")
                     else:
                         st.info("No cats detected in image")
+                    
+                    # Show processing time if debug is enabled
+                    if st.session_state.show_debug:
+                        process_time = time.time() - start_time
+                        st.sidebar.write(f"Processing Time: {process_time:.3f} seconds")
                 
             except Exception as e:
                 st.error(f"Error processing image: {str(e)}")
