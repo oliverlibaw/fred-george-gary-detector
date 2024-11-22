@@ -30,6 +30,7 @@ SOUND_FILES = {
 last_played = {}
 MIN_TIME_BETWEEN_SOUNDS = 2.0
 
+
 @st.cache_resource
 def load_model():
     """Load model from Hugging Face Hub with task specification"""
@@ -37,7 +38,7 @@ def load_model():
         # Download model from HF Hub
         model_path = hf_hub_download(
             repo_id="oliverlibaw/fred-george-gary-11-2024.pt",
-            filename="cats_yolov8n_11-21-v2.pt",
+            filename="cats_yolov8n_11-21.pt",
             cache_dir="model_cache"
         )
         
@@ -50,22 +51,20 @@ def load_model():
         # Force model to evaluation/inference mode
         model.model.eval()
         
-        # Define class names manually if needed
-        model.names = {0: 'Fred', 1: 'Gary', 2: 'George'}
-        
-        # Verify model
-        if not hasattr(model, 'names') or not model.names:
+        # Verify model loaded correctly
+        if not hasattr(model, 'names'):
             raise ValueError("Model loaded but missing class names")
             
+        # Print the existing class names for verification
+        st.sidebar.success("✅ Model loaded successfully!")
+        st.sidebar.write(f"Detected Classes: {list(model.names.values())}")
+        
         # Optional: Run a test inference to verify everything works
         dummy_input = np.zeros((640, 640, 3), dtype=np.uint8)
         try:
             _ = model(dummy_input, verbose=False)
         except Exception as e:
             raise RuntimeError(f"Model test inference failed: {str(e)}")
-        
-        st.sidebar.success("✅ Model loaded successfully!")
-        st.sidebar.write(f"Classes: {list(model.names.values())}")
         
         return model
         
