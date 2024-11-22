@@ -11,7 +11,13 @@ import pygame
 from pathlib import Path
 
 # Set page config
-st.set_page_config(page_title="Cat Detection App", layout="wide")
+st.set_page_config(
+    page_title="Cat Detection App",
+    page_icon="🐱",
+    layout="wide"
+)
+# Ensure cache directory exists
+os.makedirs("model_cache", exist_ok=True)
 
 # Dictionary to store sound files for each class
 SOUND_FILES = {
@@ -26,7 +32,7 @@ MIN_TIME_BETWEEN_SOUNDS = 2.0
 
 @st.cache_resource
 def load_model():
-    """Load model from Hugging Face Hub"""
+    """Load model from Hugging Face Hub with task specification"""
     try:
         # Download model from HF Hub
         model_path = hf_hub_download(
@@ -37,30 +43,39 @@ def load_model():
         
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Downloaded model not found at {model_path}")
-            
-        # Load model directly without data.yaml
-        model = YOLO(model_path)
         
-        # Verify model loaded correctly
+        # Load model with task specification to avoid dataset validation
+        model = YOLO(model_path, task='detect')
+        
+        # Force model to evaluation/inference mode
+        model.model.eval()
+        
+        # Define class names manually if needed
+        model.names = {0: 'Fred', 1: 'Gary', 2: 'George'}
+        
+        # Verify model
         if not hasattr(model, 'names') or not model.names:
             raise ValueError("Model loaded but missing class names")
             
-        # Force model to evaluation mode
-        model.eval()
+        # Optional: Run a test inference to verify everything works
+        dummy_input = np.zeros((640, 640, 3), dtype=np.uint8)
+        try:
+            _ = model(dummy_input, verbose=False)
+        except Exception as e:
+            raise RuntimeError(f"Model test inference failed: {str(e)}")
         
-        # Print model information for debugging
-        st.sidebar.write("Model loaded successfully!")
+        st.sidebar.success("✅ Model loaded successfully!")
         st.sidebar.write(f"Classes: {list(model.names.values())}")
         
         return model
         
     except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
-        # Add more detailed error information
-        st.error("Detailed error information:")
+        st.error("❌ Error loading model:")
+        st.error(str(e))
+        st.error("\nDetailed error information:")
         st.error(f"- Error type: {type(e).__name__}")
         st.error(f"- Error location: Model loading")
-        st.error(f"- Model path attempted: {model_path if 'model_path' in locals() else 'Not created'}")
+        st.error(f"- Model path: {model_path if 'model_path' in locals() else 'Not created'}")
         return None
 
 def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
