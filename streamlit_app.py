@@ -158,6 +158,7 @@ def process_image(image, model, conf_threshold=0.25, target_size=(1280, 1280)):
     except Exception as e:
         st.error(f"Error in image processing: {str(e)}")
         return None, []
+
 def main():
     st.title("Cat Detection App")
     
@@ -213,19 +214,58 @@ def main():
     
     with col1:
         st.subheader("Camera Input")
+        # Add custom HTML/JavaScript for high-res camera
+        camera_html = """
+        <style>
+        .camera-input > label > div > video {
+            width: 100% !important;
+            height: auto !important;
+            max-height: 800px !important;
+        }
+        .camera-input > label > div {
+            width: 100% !important;
+            max-width: none !important;
+        }
+        </style>
+        """
+        st.markdown(camera_html, unsafe_allow_html=True)
+        
+        # Camera input with higher resolution
         camera_image = st.camera_input(
             "Take a picture",
-            help="Click to capture an image"
+            help="Click to capture an image",
+            key="high_res_camera",
+            on_change=None  # Reset any cached images
+        )
+        
+        # Add file uploader as alternative
+        st.write("Or upload an image:")
+        uploaded_file = st.file_uploader(
+            "Choose an image file",
+            type=["jpg", "jpeg", "png"],
+            key="image_uploader"
         )
         
     with col2:
         st.subheader("Detection Results")
-        if camera_image is not None:
+        # Process either camera image or uploaded file
+        input_image = camera_image if camera_image is not None else uploaded_file
+        
+        if input_image is not None:
             try:
                 # Process image
                 start_time = time.time()
                 
-                image = Image.open(camera_image)
+                image = Image.open(input_image)
+                
+                # Show original image size in debug
+                if st.session_state.show_debug:
+                    st.sidebar.write("Input Image Details:")
+                    st.sidebar.write(f"Original Size: {image.size}")
+                    st.sidebar.write(f"Mode: {image.mode}")
+                    if hasattr(input_image, 'size'):
+                        st.sidebar.write(f"File Size: {input_image.size / 1024:.1f} KB")
+                
                 target_size = quality_sizes[image_quality]
                 
                 # Process image
@@ -257,6 +297,22 @@ def main():
             except Exception as e:
                 st.error(f"Error processing image: {str(e)}")
                 st.write("Please try taking another picture.")
+                if st.session_state.show_debug:
+                    st.error(f"Detailed error: {str(e)}")
+    
+    # Add information about supported resolutions
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### Supported Image Sizes")
+        for quality, size in quality_sizes.items():
+            st.write(f"- {quality}: {size[0]}x{size[1]}")
+        
+        if st.session_state.show_debug:
+            st.markdown("---")
+            st.markdown("### System Information")
+            st.write(f"- CUDA Available: {torch.cuda.is_available()}")
+            if torch.cuda.is_available():
+                st.write(f"- GPU: {torch.cuda.get_device_name(0)}")
 
 def initialize_audio():
     """Initialize audio system with error handling"""
