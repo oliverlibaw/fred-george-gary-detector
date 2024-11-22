@@ -78,30 +78,44 @@ def load_model():
         return None
 
 def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
-    """Enhanced image processing with better error handling and preprocessing"""
+    """Enhanced image processing with better size handling"""
     try:
+        # Debug image size
+        if st.sidebar.checkbox("Show Debug Info"):
+            st.sidebar.write(f"Original Image Size: {image.size}")
+        
         # Convert PIL Image to RGB numpy array
         if isinstance(image, Image.Image):
             # Ensure RGB mode
             if image.mode != 'RGB':
                 image = image.convert('RGB')
             
-            # Resize while maintaining aspect ratio
-            ratio = min(target_size[0] / image.size[0], target_size[1] / image.size[1])
-            new_size = tuple(int(dim * ratio) for dim in image.size)
+            # Store original size for scaling
+            original_size = image.size
+            
+            # Preserve aspect ratio while resizing
+            ratio = min(target_size[0] / original_size[0], target_size[1] / original_size[1])
+            new_size = tuple(int(dim * ratio) for dim in original_size)
+            
+            if new_size[0] < 320 or new_size[1] < 320:
+                # Instead of warning, upscale to minimum size
+                scale_ratio = 320 / min(new_size)
+                new_size = tuple(int(dim * scale_ratio) for dim in new_size)
+                
+            # Resize image
             image = image.resize(new_size, Image.Resampling.LANCZOS)
             
             # Convert to numpy array
             image_np = np.array(image)
+            
+            if st.sidebar.checkbox("Show Debug Info"):
+                st.sidebar.write(f"Processed Size: {new_size}")
         else:
             raise ValueError("Input must be a PIL Image")
 
         # Ensure correct format and range
         if image_np.dtype != np.uint8:
             image_np = (image_np * 255).astype(np.uint8)
-            
-        # Store original size for scaling back
-        orig_size = image_np.shape[:2]
         
         # Run inference
         results = model(image_np, conf=conf_threshold, verbose=False)[0]
@@ -109,7 +123,6 @@ def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
         
         # Process detections
         for box in results.boxes:
-            # Get box coordinates and scale to original size
             x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
             conf = float(box.conf[0].cpu().numpy())
             cls = int(box.cls[0].cpu().numpy())
@@ -143,6 +156,88 @@ def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
     except Exception as e:
         st.error(f"Error in image processing: {str(e)}")
         return None, []
+
+def main():
+    st.title("Cat Detection App")
+    
+    # Initialize systems
+    audio_initialized = initialize_audio()
+    model = load_model()
+    
+    if model is None:
+        st.error("Failed to load model. Please refresh the page or contact support.")
+        st.stop()
+
+    # Sidebar settings
+    with st.sidebar:
+        st.header("Detection Settings")
+        conf_threshold = st.slider(
+            "Confidence Threshold",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.25,
+            step=0.05,
+            help="Adjust detection sensitivity"
+        )
+        
+        # Image quality settings with proper size mapping
+        st.header("Image Settings")
+        image_quality = st.select_slider(
+            "Image Quality",
+            options=["Low", "Medium", "High"],
+            value="High",
+            help="Higher quality may affect performance"
+        )
+        
+        # Updated quality to size mapping
+        quality_sizes = {
+            "Low": (640, 640),     # Base size
+            "Medium": (800, 800),   # Slightly larger
+            "High": (1024, 1024)    # Maximum size
+        }
+
+    # Main content
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Camera Input")
+        camera_image = st.camera_input(
+            "Take a picture",
+            help="Click to capture an image"
+        )
+        
+    with col2:
+        st.subheader("Detection Results")
+        if camera_image is not None:
+            try:
+                # Process image with selected quality
+                image = Image.open(camera_image)
+                target_size = quality_sizes[image_quality]
+                
+                # Process image
+                annotated_img, detections = process_image(
+                    image, 
+                    model, 
+                    conf_threshold,
+                    target_size=target_size
+                )
+                
+                if annotated_img is not None:
+                    # Display results
+                    st.image(annotated_img, channels="RGB", use_column_width=True)
+                    
+                    if detections:
+                        st.write("Detections:")
+                        for det in detections:
+                            conf = det['confidence']
+                            color = 'green' if conf > 0.8 else 'orange' if conf > 0.5 else 'red'
+                            st.markdown(f"- {det['class']}: ::{color}[{conf:.2f}]")
+                    else:
+                        st.info("No cats detected in image")
+                
+            except Exception as e:
+                st.error(f"Error processing image: {str(e)}")
+                st.write("Please try taking another picture.")
 
 def initialize_audio():
     """Initialize audio system with error handling"""
