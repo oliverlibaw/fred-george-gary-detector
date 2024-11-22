@@ -32,30 +32,55 @@ def load_model():
         st.error(f"Error loading model: {str(e)}")
         return None
 
-def process_image(image, model, conf_threshold=0.25, target_size=(1280, 1280)):
-    """Process image with optimized settings"""
+def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
+    """Process image with consistent sizing"""
     try:
-        # Convert to RGB and resize
+        # Convert to RGB
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
-        # Calculate new size maintaining aspect ratio
-        aspect_ratio = image.size[0] / image.size[1]
-        if aspect_ratio > 1:
-            new_size = (target_size[0], int(target_size[1] / aspect_ratio))
-        else:
-            new_size = (int(target_size[0] * aspect_ratio), target_size[1])
-            
-        image = image.resize(new_size, Image.Resampling.LANCZOS)
+        # Store original size for scaling back
+        original_size = image.size
+        
+        # Convert to numpy array first (keeping original size)
         image_np = np.array(image)
         
-        # Run inference
+        # Run inference at original size first
         results = model(image_np, conf=conf_threshold, verbose=False)[0]
+        
+        # If no detections and image is significantly larger than target size, try with resizing
+        if len(results.boxes) == 0 and min(image.size) > max(target_size):
+            # Resize image maintaining aspect ratio
+            aspect_ratio = image.size[0] / image.size[1]
+            if aspect_ratio > 1:
+                new_size = (int(target_size[0] * aspect_ratio), target_size[1])
+            else:
+                new_size = (target_size[0], int(target_size[1] / aspect_ratio))
+            
+            resized_image = image.resize(new_size, Image.Resampling.LANCZOS)
+            image_np = np.array(resized_image)
+            
+            # Run inference again on resized image
+            results = model(image_np, conf=conf_threshold, verbose=False)[0]
+            
+            # Scale back the coordinates to original size
+            scale_x = original_size[0] / new_size[0]
+            scale_y = original_size[1] / new_size[1]
+            
+            # Convert back to original size for visualization
+            image_np = np.array(image)
+        
         detections = []
         
         # Process detections
         for box in results.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
+            
+            # Scale coordinates if we resized
+            if 'scale_x' in locals():
+                x1, x2 = int(x1 * scale_x), int(x2 * scale_x)
+                y1, y2 = int(y1 * scale_y), int(y2 * scale_y)
+            
             conf = float(box.conf[0].cpu().numpy())
             cls = int(box.cls[0].cpu().numpy())
             class_name = results.names[cls]
