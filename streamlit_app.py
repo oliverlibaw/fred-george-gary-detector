@@ -33,53 +33,66 @@ def load_model():
         return None
 
 def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
-    """Process image with consistent sizing"""
+    """Process image with optimized resizing for both small and large images"""
     try:
         # Convert to RGB
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
-        # Store original size for scaling back
+        # Store original size
         original_size = image.size
         
-        # Convert to numpy array first (keeping original size)
-        image_np = np.array(image)
+        # Determine if we need to resize
+        min_dim = min(original_size)
+        max_dim = max(original_size)
         
-        # Run inference at original size first
+        # Calculate resize factor
+        resize_needed = False
+        
+        # For images smaller than target size, scale up to 640 exactly
+        if min_dim < target_size[0]:
+            scale_factor = target_size[0] / min_dim
+            new_size = (int(original_size[0] * scale_factor), 
+                       int(original_size[1] * scale_factor))
+            resize_needed = True
+            
+        # For large images, scale down if significantly larger than target
+        elif max_dim > target_size[0] * 2:  # If more than 2x target size
+            scale_factor = target_size[0] * 2 / max_dim
+            new_size = (int(original_size[0] * scale_factor),
+                       int(original_size[1] * scale_factor))
+            resize_needed = True
+        
+        # Process image
+        if resize_needed:
+            processed_image = image.resize(new_size, Image.Resampling.LANCZOS)
+            # Log resize operation
+            st.write(f"Resized from {original_size} to {new_size}")
+        else:
+            processed_image = image
+            st.write(f"Using original size: {original_size}")
+            
+        # Convert to numpy array
+        image_np = np.array(processed_image)
+        
+        # Run inference
         results = model(image_np, conf=conf_threshold, verbose=False)[0]
         
-        # If no detections and image is significantly larger than target size, try with resizing
-        if len(results.boxes) == 0 and min(image.size) > max(target_size):
-            # Resize image maintaining aspect ratio
-            aspect_ratio = image.size[0] / image.size[1]
-            if aspect_ratio > 1:
-                new_size = (int(target_size[0] * aspect_ratio), target_size[1])
-            else:
-                new_size = (target_size[0], int(target_size[1] / aspect_ratio))
-            
-            resized_image = image.resize(new_size, Image.Resampling.LANCZOS)
-            image_np = np.array(resized_image)
-            
-            # Run inference again on resized image
-            results = model(image_np, conf=conf_threshold, verbose=False)[0]
-            
-            # Scale back the coordinates to original size
-            scale_x = original_size[0] / new_size[0]
-            scale_y = original_size[1] / new_size[1]
-            
-            # Convert back to original size for visualization
+        # Convert back to original size for visualization if we resized
+        if resize_needed:
             image_np = np.array(image)
-        
+            
         detections = []
-        
         # Process detections
         for box in results.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
             
-            # Scale coordinates if we resized
-            if 'scale_x' in locals():
-                x1, x2 = int(x1 * scale_x), int(x2 * scale_x)
-                y1, y2 = int(y1 * scale_y), int(y2 * scale_y)
+            # Scale coordinates back if we resized
+            if resize_needed:
+                x1 = int(x1 * original_size[0] / new_size[0])
+                x2 = int(x2 * original_size[0] / new_size[0])
+                y1 = int(y1 * original_size[1] / new_size[1])
+                y2 = int(y2 * original_size[1] / new_size[1])
             
             conf = float(box.conf[0].cpu().numpy())
             cls = int(box.cls[0].cpu().numpy())
@@ -95,15 +108,17 @@ def process_image(image, model, conf_threshold=0.25, target_size=(640, 640)):
             label = f"{class_name}: {conf:.2f}"
             (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
             cv2.rectangle(image_np, (x1, y1-h-10), (x1+w, y1), color, -1)
-            cv2.putText(image_np, label, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+            cv2.putText(image_np, label, (x1, y1-5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
             
             detections.append({
                 'class': class_name,
                 'confidence': conf,
                 'bbox': [x1, y1, x2, y2]
             })
-            
+        
         return image_np, detections
+        
     except Exception as e:
         st.error(f"Error in image processing: {str(e)}")
         return None, []
