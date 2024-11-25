@@ -17,12 +17,7 @@ def load_model():
 
 
 def main():
-    model_path = hf_hub_download(
-        repo_id="oliverlibaw/fred-george-gary-11-2024.pt",
-        filename="cats_yolov8n_11-21-v2.pt",
-        cache_dir="model_cache"
-    )
-    solutions.inference(model_path)
+    solutions.inference("/workspaces/fred-george-gary-detector/cats_yolov8n_11-21-v2.pt")
 
 if __name__ == "__main__":
     main()
