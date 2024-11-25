@@ -12,9 +12,7 @@ def main():
     
     try:
         solutions.inference(
-            model="cats_yolov8n_11-21-v2.pt",
-            conf_threshold=confidence,
-            iou_threshold=iou_threshold
+            model="cats_yolov8n_11-21-v2.pt"
         )
     except Exception as e:
         st.error(f"Error: {str(e)}")
