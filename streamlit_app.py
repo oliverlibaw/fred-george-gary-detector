@@ -13,7 +13,6 @@ def main():
     try:
         solutions.inference(
             model="cats_yolov8n_11-21-v2.pt",
-            imgsz=640,
             conf_threshold=confidence,
             iou_threshold=iou_threshold
         )
