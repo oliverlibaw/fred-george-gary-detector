@@ -1,6 +1,9 @@
 from ultralytics import solutions
 import streamlit as st
 
+# Must be first Streamlit command
+st.set_page_config(page_title="Cat Detection App", page_icon="🐱")
+
 
 def main():
     st.title("Cat Detection")
